@@ -412,7 +412,7 @@ def _git_exists():
     Returns:
         bool: True if .git dir exists
     """
-    return os.path.isdir('.git')
+    return os.path.exists('.git')
 
 
 def _git_ls_files(extra_args):
