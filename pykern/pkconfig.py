@@ -115,7 +115,7 @@ Here are the steps to configuring an application:
    and environment variables to create a single dict of param values,
    unparsed, by calling `merge` repeatedly.
 
-2. `init` looks for the module's params by indexing with (root_pkg, submodule, param)
+2. `init` looks for the module's params by indexing with (root_package, submodule, param)
    in the merged config.
 
 3. If the parameter is found, that value is used. Else, the default is merged
@@ -232,6 +232,38 @@ class Required(tuple, object):
         return super(Required, cls).__new__(cls, (None,) + args)
 
 
+def all_modules_in_load_path(path_module=None):
+    """Loads all modules in path_module
+
+    Finds all modules in `cfg.load_path` matching the main_module sans root.
+    If path_module is ``sirepo.pkcli``, then the loaded modules will look
+    like ``<root>.pkcli.<base>``. Only goes one depth.
+
+    Args:
+        path_module (module): full path module [caller module]
+
+    Returns:
+        pkcollection.Dict: map of base names to module objects
+    """
+    import pkgutil
+
+    _coalesce_values()
+    if not path_module:
+        path_module = pkinspect.caller_module()
+    res = pkcollections.Dict()
+    pn = pkinspect.submodule_name(path_module)
+    for p in reversed(cfg.load_path):
+        try:
+            pm = importlib.import_module(pkinspect.module_name_join((p, pn)))
+        except ImportError:
+            # submodule need not exist in root
+            continue
+        for l, n, is_pkg in pkgutil.iter_modules(path=pm.__path__):
+            if not is_pkg and n not in res:
+                res[n] = importlib.import_module(pkinspect.module_name_join((pm.__name__, n)))
+    return res
+
+
 def append_load_path(load_path):
     """Called by entry point modules to add packages into the load path
 
@@ -311,39 +343,6 @@ def init(**kwargs):
     return res
 
 
-
-def all_modules_in_load_path(path_module=None):
-    """Loads all modules in path_module
-
-    Finds all modules in `cfg.load_path` matching the main_module sans root.
-    If path_module is ``sirepo.pkcli``, then the loaded modules will look
-    like ``<root>.pkcli.<base>``. Only goes one depth.
-
-    Args:
-        path_module (module): full path module [caller module]
-
-    Returns:
-        pkcollection.Dict: map of base names to module objects
-    """
-    import pkgutil
-
-    _coalesce_values()
-    if not path_module:
-        path_module = pkinspect.caller_module()
-    res = pkcollections.Dict()
-    pn = pkinspect.submodule_name(path_module)
-    for p in reversed(cfg.load_path):
-        try:
-            pm = importlib.import_module(pkinspect.module_name_join((p, pn)))
-        except ImportError:
-            # submodule need not exist in root
-            continue
-        for l, n, is_pkg in pkgutil.iter_modules(path=pm.__path__):
-            if not is_pkg and n not in res:
-                res[n] = importlib.import_module(pkinspect.module_name_join((pm.__name__, n)))
-    return res
-
-
 def parse_none(func):
     """Decorator for a parser which can parse None
 
@@ -369,6 +368,17 @@ def reset_state_for_testing(add_to_environ=None):
     global _raw_values, _add_to_environ
     _raw_values = None
     _add_to_environ = copy.deepcopy(add_to_environ)
+
+
+def root_package():
+    """Root package for this application
+
+    Returns:
+        module: root package module
+    """
+    _coalesce_values()
+
+    return importlib.import_module(cfg.load_path[-1])
 
 
 class _Declaration(object):
