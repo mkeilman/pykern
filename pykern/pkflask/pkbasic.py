@@ -19,22 +19,32 @@ class Component(pkflask.Component):
         self.__pkapi = pkapi
 
 
-    def uri_favicon_ico(self, req):
+    def uri_favicon_ico(self):
         return self.empty_response()
 
-    def uri_robots_txt(self, req):
+    def uri_robots_txt(self):
         return self.empty_response()
 
-    def uri_v1(self, req):
+    def uri_f(self):
+        parts = self.parsed_url().path.split('/')
+
+
+    def uri_1(self, req):
         """api dispatcher
         """
         return self.__pkapi.dispatch(req)
 
-    def exception_empty_uri(self, req):
+    def exception_uri_empty(self, **kwargs):
         return self.empty_response()
 
-    def exception_uri_not_found(self, req):
-        werkzeug.exceptions.abort(404)
+    def exception_uri_not_found(self, **kwargs):
+        import flask
 
-    def exception_not_found(self, req):
+        raise pkflask.NotFound('{}: unmapped URI', flask.request.url)
+
+    def exception_not_found(self, **kwargs):
+        from pykern.pkdebug import pkdlog
+
+        e = kwargs['exception']
+        pkdlog(e.log_fmt, *e.args, **e.kwargs)
         werkzeug.exceptions.abort(404)

@@ -35,6 +35,9 @@ _ENVIRON_KEY_BEAKER = 'beaker.session'
 #: Identifies the user in the Beaker session
 _SESSION_KEY_USER = 'uid'
 
+#: Name of component methods
+_URI_FUNC_PREFIX = 'uri_'
+
 #: Identifies the user in uWSGI logging (read by uwsgi.yml.jinja)
 _UWSGI_LOG_KEY_USER = 'pkflask_user'
 
@@ -105,12 +108,26 @@ class NotFound(Exception):
 
 
 class Component(object):
-    def empty_response():
+    def empty_response(self):
         return '';
 
+    def parsed_url(self):
+        """Wrapper, because urllib will be changing..."""
+        import urlparse
 
-    def not_found(*args, **kwargs):
-        raise NotFound(*args, **kwargs)
+        return urlparse.urlparse(flask.request.url_root)
+
+    def secure_path_info(self):
+        import os.path
+        import werkzeug.utils
+
+        parts = self.parsed_url().split('/')
+        res = []
+        for p in parts:
+            x = werkzeug.utils.secure_filename(p)
+            if x != p:
+                abort
+        return p if len(p) else None
 
 
 class _BeakerSession(flask.sessions.SessionInterface):
@@ -225,12 +242,14 @@ def _dispatch_uri(path):
     import werkzeug.exceptions
     try:
         if path is None:
-            return _empty_route_func()
+            return components[_EXCEPTIONS_COMPONENT].exception_uri_empty()
         parts = path.split('/')
         f = _uri_to_func(path[0])
         parts.pop(0)
         return f(path_info='/'.join(parts))
     except NotFound as e:
+        components[_EXCEPTIONS_COMPONENT].exception_not_found(exception=e)
+
         #TODO(robnagler) cascade calling context
         pkdlog(e.log_fmt, *e.args, **e.kwargs)
         raise werkzeug.exceptions.NotFound()
@@ -282,11 +301,7 @@ def _uri_to_func(uri):
     try:
         return _uris[n]
     except KeyError:
-        return _uri_not_mapped
-
-def _uri_not_mapped(req):
-    for f in exceptions['uri_not_mapped']:
-    pass
+        return components[_EXCEPTIONS_COMPONENT].exception_uri_not_found
 
 
 cfg = pkconfig.init(
