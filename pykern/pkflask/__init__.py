@@ -108,6 +108,21 @@ class NotFound(Exception):
 
 
 class Component(object):
+    def __init__(self, name, app):
+        self.name = name
+
+    def file_response(self, rel_path):
+        """Return a file for this component along load_path
+
+        Args:
+            rel_path (str): partial secure path (use secure_path_info)
+        """
+        #TODO(robnagler) insert md5
+        return flask.send_file(
+            pkresource.filename_from_load_path(os.path.join(self.name, str(rel_path))),
+            conditional=True,
+        )
+
     def empty_response(self):
         return '';
 
@@ -121,13 +136,14 @@ class Component(object):
         import os.path
         import werkzeug.utils
 
-        parts = self.parsed_url().split('/')
-        res = []
+        url = self.parsed_url().path
+        parts = url.split('/')
+        parts.pop(0)
         for p in parts:
             x = werkzeug.utils.secure_filename(p)
-            if x != p:
-                abort
-        return p if len(p) else None
+            assert x == p, \
+                '{}: invalid path info element; secure={} url={} '.format(p, x, url)
+        return parts.join('/') if len(parts) else None
 
 
 class _BeakerSession(flask.sessions.SessionInterface):
@@ -243,19 +259,11 @@ def _dispatch_uri(path):
     try:
         if path is None:
             return components[_EXCEPTIONS_COMPONENT].exception_uri_empty()
-        parts = path.split('/')
-        f = _uri_to_func(path[0])
-        parts.pop(0)
-        return f(path_info='/'.join(parts))
+        return _uri_to_func(path)()
     except NotFound as e:
-        components[_EXCEPTIONS_COMPONENT].exception_not_found(exception=e)
-
-        #TODO(robnagler) cascade calling context
-        pkdlog(e.log_fmt, *e.args, **e.kwargs)
-        raise werkzeug.exceptions.NotFound()
+        return components[_EXCEPTIONS_COMPONENT].exception_not_found(exception=e)
     except Exception as e:
-        pkdlog('{}: error: {}', path, pkdexc())
-        raise
+        return components[_EXCEPTIONS_COMPONENT].exception_error(exception=e)
 
 
 def _dispatch_empty():
@@ -282,7 +290,7 @@ def _init_components(app):
                     inspect.getsourcefile(m),
                     inspect.getsourcefile(components[k]),
                 )
-            components[k] = c(app)
+            components[k] = c(name=k, app=app)
             for nf, f in inspect.getmembers(components[k], predicate=inspect.ismethod):
                 if nf.startswith(_URI_FUNC_PREFIX):
                     assert not nf in uris, \
@@ -297,7 +305,8 @@ def _init_components(app):
 
 
 def _uri_to_func(uri):
-    n = re.sub(r'\W', '_', uri)
+    first = uri.split('/')[0]
+    n = re.sub(r'\W', '_', first).lower()
     try:
         return _uris[n]
     except KeyError:
